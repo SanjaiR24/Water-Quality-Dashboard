@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Water Quality Monitoring Dashboard</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Times New Roman', serif;
+    background: #ffffff;
+    color: #000000;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 {
+    color: #1f3864;
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #595959;
+    margin-bottom: 24px;
+    font-style: italic;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .card {
+    border: 1px solid #808080;
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+    background: #fafafa;
+  }
+  .card h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #1f3864;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .card p {
+    margin: 0;
+    font-size: 24px;
+    font-weight: bold;
+  }
+  #state.NORMAL    { color: #1a7a1a; }
+  #state.PURIFYING { color: #b8860b; }
+  #state.ESCALATED { color: #c0392b; }
+  .chart-container {
+    border: 1px solid #808080;
+    border-radius: 6px;
+    padding: 16px;
+    background: #fafafa;
+  }
+  .status-bar {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #595959;
+  }
+</style>
+</head>
+<body>
+
+<h1>Water Quality Monitoring Dashboard</h1>
+<p class="subtitle">IoT-Based Water Quality Monitoring System with Source-Adaptive Anomaly Detection and Automated Purification Response</p>
+
+<div class="cards">
+  <div class="card"><h3>TDS</h3><p id="tds">--</p></div>
+  <div class="card"><h3>pH</h3><p id="ph">--</p></div>
+  <div class="card"><h3>Turbidity</h3><p id="turbidity">--</p></div>
+  <div class="card"><h3>Temperature</h3><p id="temperature">--</p></div>
+  <div class="card"><h3>Mahalanobis D</h3><p id="mahalanobis">--</p></div>
+  <div class="card"><h3>System State</h3><p id="state">--</p></div>
+</div>
+
+<div class="chart-container">
+  <canvas id="chart" height="90"></canvas>
+</div>
+<div class="status-bar" id="connStatus">Connecting to Firebase...</div>
+
+<script>
+  // ---------------------------------------------------------------
+  // FILL IN your own Firebase project config here. Find these
+  // values in Firebase Console -> Project Settings -> General ->
+  // "Your apps" -> SDK setup and configuration.
+  // ---------------------------------------------------------------
+  const firebaseConfig = {
+  apiKey: "AIzaSyDscR03-fZhCiK3szM1fJbFxcuPc8XV4ok",
+  authDomain: "water-quality-monitor-2428.firebaseapp.com",
+  databaseURL: "https://water-quality-monitor-2428-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "water-quality-monitor-2428",
+  storageBucket: "water-quality-monitor-2428.firebasestorage.app",
+  messagingSenderId: "374509813236",
+  appId: "1:374509813236:web:8f2a18420354e00c660da1"
+};
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const readingsRef = db.ref('readings');
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'TDS (ppm)',       data: [], borderColor: '#1f77b4', tension: 0.3 },
+        { label: 'pH',              data: [], borderColor: '#2ca02c', tension: 0.3 },
+        { label: 'Turbidity (NTU)', data: [], borderColor: '#ff7f0e', tension: 0.3 },
+        { label: 'Temperature (C)', data: [], borderColor: '#d62728', tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { font: { family: 'Times New Roman' } } } },
+      scales: {
+        x: { ticks: { font: { family: 'Times New Roman' } } },
+        y: { ticks: { font: { family: 'Times New Roman' } } }
+      }
+    }
+  });
+
+  const MAX_POINTS = 20;
+
+  readingsRef.limitToLast(1).on('child_added', (snapshot) => {
+    const d = snapshot.val();
+    if (!d) return;
+
+    document.getElementById('connStatus').textContent = 'Connected - live updates active';
+
+    document.getElementById('tds').textContent = d.tds + ' ppm';
+    document.getElementById('ph').textContent = d.ph;
+    document.getElementById('turbidity').textContent = d.turbidity + ' NTU';
+    document.getElementById('temperature').textContent = d.temperature + ' C';
+    document.getElementById('mahalanobis').textContent = (d.mahalanobis !== undefined) ? d.mahalanobis : '--';
+
+    const stateEl = document.getElementById('state');
+    stateEl.textContent = d.state || '--';
+    stateEl.className = d.state || '';
+
+    const t = new Date().toLocaleTimeString();
+    chart.data.labels.push(t);
+    chart.data.datasets[0].data.push(d.tds);
+    chart.data.datasets[1].data.push(d.ph);
+    chart.data.datasets[2].data.push(d.turbidity);
+    chart.data.datasets[3].data.push(d.temperature);
+
+    if (chart.data.labels.length > MAX_POINTS) {
+      chart.data.labels.shift();
+      chart.data.datasets.forEach(ds => ds.data.shift());
+    }
+    chart.update();
+  });
+
+  readingsRef.on('error', (err) => {
+    document.getElementById('connStatus').textContent = 'Firebase error: ' + err.message;
+  });
+</script>
+
+</body>
+</html>
